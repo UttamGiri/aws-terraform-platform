@@ -36,7 +36,8 @@ jobs:
       - name: Terraform Format check
         run: |
           cd envs/nonprod
-          terraform fmt -check
+          # Only check .tf files (terraform fmt doesn't support .tfvars files)
+          terraform fmt -check *.tf
 
       - name: Terraform Validate
         run: |
