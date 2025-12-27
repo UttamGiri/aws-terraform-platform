@@ -59,7 +59,7 @@ The `TerraformCIRole` should have permissions for:
 2. **Merge to main**: Workflow runs `terraform apply` automatically
 3. **Check AWS Console**: Verify resources are created
 
-## Files
+## Files 
 
 - `main.tf` - Main Terraform configuration
 - `backend.tf` - S3 backend configuration with DynamoDB locking
