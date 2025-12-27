@@ -13,14 +13,13 @@ provider "aws" {
   region = var.aws_region
 }
 
-# Call the common module
 module "common" {
   source = "../../modules/common"
 
-  bucket_name       = var.bucket_name
-  environment       = var.environment
-  enable_versioning = var.enable_versioning
+  bucket_name          = var.bucket_name
+  environment          = var.environment
+  enable_versioning    = var.enable_versioning
   encryption_algorithm = var.encryption_algorithm
-  common_tags       = var.common_tags
+  common_tags          = var.common_tags
 }
 
