@@ -20,7 +20,7 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v3
         with:
-          role-to-assume: ${{ secrets.AWS_ROLE_TO_ASSUME }}
+          role-to-assume: ${{ secrets.AWS_NON_PROD_ROLE_TO_ASSUME }}
           aws-region: us-east-1
 
       - name: Setup Terraform
@@ -29,19 +29,26 @@ jobs:
           terraform_version: 1.8.0
 
       - name: Terraform Init
-        run: terraform init
+        run: |
+          cd envs/nonprod
+          terraform init -reconfigure
 
       - name: Terraform Format check
-        run: terraform fmt
+        run: |
+          cd envs/nonprod
+          terraform fmt -check
 
       - name: Terraform Validate
-        run: terraform validate
+        run: |
+          cd envs/nonprod
+          terraform validate
 
       - name: Terraform Plan
         id: plan
         run: |
+          cd envs/nonprod
           set -o pipefail
-          terraform plan -no-color -detailed-exitcode | tee tfplan.txt
+          terraform plan -no-color -var-file=nonprod.tfvars -detailed-exitcode | tee ../../tfplan.txt
           echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
@@ -100,4 +107,6 @@ jobs:
 
       - name: Terraform Apply
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
-        run: terraform apply -auto-approve
+        run: |
+          cd envs/nonprod
+          terraform apply -var-file=nonprod.tfvars -auto-approve
