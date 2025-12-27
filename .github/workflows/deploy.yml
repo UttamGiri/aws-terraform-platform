@@ -43,12 +43,18 @@ jobs:
           cd envs/nonprod
           terraform validate
 
+      - name: Verify tfvars file exists
+        run: |
+          cd envs/nonprod
+          ls -la *.tfvars
+          pwd
+
       - name: Terraform Plan
         id: plan
         run: |
           cd envs/nonprod
           set -o pipefail
-          terraform plan -no-color -var-file=nonprod.tfvars -detailed-exitcode | tee ../../tfplan.txt
+          terraform plan -no-color -var-file=./nonprod.tfvars -detailed-exitcode | tee ../../tfplan.txt
           echo "exitcode=$?" >> $GITHUB_OUTPUT
         continue-on-error: true
 
@@ -109,4 +115,4 @@ jobs:
         if: github.event_name == 'push' && github.ref == 'refs/heads/main'
         run: |
           cd envs/nonprod
-          terraform apply -var-file=nonprod.tfvars -auto-approve
+          terraform apply -var-file=./nonprod.tfvars -auto-approve
