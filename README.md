@@ -6,52 +6,147 @@ This project demonstrates secure AWS infrastructure deployment using Terraform w
 
 1. **GitHub Actions** requests a short-lived OIDC token
 2. **AWS IAM** trusts the OIDC token (configured as Identity Provider)
-3. Workflow **assumes IAM role** (`TerraformCIRole`) and gets temporary credentials
+3. Workflow **assumes IAM role** (`TerraformCINonProdRole` or `TerraformCIProdRole`) and gets temporary credentials
 4. **Terraform** runs and manages infrastructure securely
+5. **State** is stored in `vaflt-tf-state-bucket` with locking via `vaflt-terraform-locks` DynamoDB table
 
 ## Prerequisites
 
-- AWS Account with:
-  - S3 Bucket: `vaflt-tf-state-bucket` (for Terraform state)
-  - DynamoDB Table: `vaflt-terraform-locks` (for state locking)
-  - IAM Role: `TerraformCIRole` with OIDC trust policy
-  - OIDC Identity Provider configured in IAM
+### Step 1: Enable AWS Control Tower (Manual)
 
-## Setup 
+**First, manually enable AWS Control Tower:**
 
-### 1. AWS Configuration
+1. Go to AWS Control Tower in the AWS Management Console
+2. Enable Control Tower (this is a one-time setup)
+3. By default, Control Tower creates two Organizational Units (OUs):
+   - **NonProd OU** - For non-production workloads
+   - **Prod OU** - For production workloads
+4. **AWS CloudTrail** and **AWS Config** are automatically applied to all accounts
+5. **Always go through Account Factory** to create new accounts (this ensures proper OU assignment and governance)
 
-- **S3 Backend Bucket**: `vaflt-tf-state-bucket`
-- **DynamoDB Lock Table**: `vaflt-terraform-locks`
-- **IAM Role**: `TerraformCIRole`
+### Step 2: Create Terraform State Infrastructure (Manual)
 
-### 2. GitHub Secrets
+Create the following resources manually in your Management/Shared Services account:
 
-Add the following secret to your GitHub repository:
-- **Settings → Secrets and variables → Actions → New repository secret**
-  - Name: `AWS_ROLE_ARN`
-  - Value: `arn:aws:iam::<ACCOUNT_ID>:role/TerraformCIRole`
+#### S3 Bucket for State Storage
 
-### 3. IAM Policy Requirements
+- **Bucket Name**: `vaflt-tf-state-bucket`
+- **Purpose**: Store Terraform state files
+- **Configuration**:
+  - Enable versioning
+  - Enable encryption (SSE-S3 or SSE-KMS)
+  - Block all public access
+  - Enable bucket versioning
 
-The `TerraformCIRole` should have permissions for:
-- S3 operations on `vaflt-tf-state-bucket` (for state storage)
-- DynamoDB operations on `vaflt-terraform-locks` (for state locking)
-- Any resources you plan to create with Terraform
+#### DynamoDB Table for State Locking
 
-**Important**: Your IAM policy should include DynamoDB permissions for state locking:
+- **Table Name**: `vaflt-terraform-locks`
+- **Purpose**: Enable state locking to prevent concurrent modifications
+- **Configuration**:
+  - **Partition Key**: `LockID` (String)
+  - **Billing Mode**: On-demand or Provisioned (recommended: On-demand)
+  - **Region**: Same as S3 bucket (e.g., `us-east-1`)
+
+### Step 3: Create IAM Roles (Manual)
+
+Create the following IAM roles manually in their respective accounts:
+
+#### NonProd Account
+- **Role Name**: `TerraformCINonProdRole`
+- **Account**: NonProd OU account
+- **Purpose**: Allow GitHub Actions to deploy to non-production environment
+
+#### Prod Account
+- **Role Name**: `TerraformCIProdRole`
+- **Account**: Prod OU account
+- **Purpose**: Allow GitHub Actions to deploy to production environment
+
+#### OIDC Trust Policy
+
+Both roles need an OIDC trust policy to allow GitHub Actions to assume them:
 
 ```json
 {
-  "Effect": "Allow",
-  "Action": [
-    "dynamodb:GetItem",
-    "dynamodb:PutItem",
-    "dynamodb:DeleteItem"
-  ],
-  "Resource": "arn:aws:dynamodb:*:*:table/vaflt-terraform-locks"
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Federated": "arn:aws:iam::<ACCOUNT_ID>:oidc-provider/token.actions.githubusercontent.com"
+      },
+      "Action": "sts:AssumeRoleWithWebIdentity",
+      "Condition": {
+        "StringEquals": {
+          "token.actions.githubusercontent.com:aud": "sts.amazonaws.com",
+          "token.actions.githubusercontent.com:sub": "repo:<OWNER>/<REPO>:ref:refs/heads/main"
+        }
+      }
+    }
+  ]
 }
 ```
+
+**Note**: Replace `<ACCOUNT_ID>`, `<OWNER>`, and `<REPO>` with your actual values.
+
+### Step 4: Create IAM Policy (Manual)
+
+Create the IAM policy `TerraformCIRolePolicy` manually. This policy is used to distinguish between the two roles and provides access to Terraform state resources:
+
+**Policy Name**: `TerraformCIRolePolicy`
+
+**Policy Document**:
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Action": [
+        "s3:PutObject",
+        "s3:GetObject",
+        "s3:DeleteObject",
+        "s3:ListBucket"
+      ],
+      "Resource": [
+        "arn:aws:s3:::vaflt-tf-state-bucket",
+        "arn:aws:s3:::vaflt-tf-state-bucket/*"
+      ]
+    },
+    {
+      "Effect": "Allow",
+      "Action": [
+        "dynamodb:GetItem",
+        "dynamodb:PutItem",
+        "dynamodb:DeleteItem"
+      ],
+      "Resource": "arn:aws:dynamodb:*:*:table/vaflt-terraform-locks"
+    }
+  ]
+}
+```
+
+**Attach this policy to both roles**:
+- `TerraformCINonProdRole`
+- `TerraformCIProdRole`
+
+**Note**: The only distinction between the two roles is the Terraform state lock table access. Both roles use the same state bucket and lock table, but operate in different AWS accounts (NonProd vs Prod).
+
+### Step 5: Configure GitHub Secrets
+
+Add the following secrets to your GitHub repository:
+
+- **Settings → Secrets and variables → Actions → New repository secret**
+
+#### For NonProd Environment:
+- **Name**: `AWS_NON_PROD_ROLE_TO_ASSUME`
+- **Value**: `arn:aws:iam::<NONPROD_ACCOUNT_ID>:role/TerraformCINonProdRole`
+
+#### For Prod Environment (if using):
+- **Name**: `AWS_PROD_ROLE_TO_ASSUME`
+- **Value**: `arn:aws:iam::<PROD_ACCOUNT_ID>:role/TerraformCIProdRole`
+
+**Note**: Replace `<NONPROD_ACCOUNT_ID>` and `<PROD_ACCOUNT_ID>` with your actual AWS account IDs.
 
 ## Usage
 
