@@ -17,7 +17,7 @@ This project demonstrates secure AWS infrastructure deployment using Terraform w
   - IAM Role: `TerraformCIRole` with OIDC trust policy
   - OIDC Identity Provider configured in IAM
 
-## Setup
+## Setup 
 
 ### 1. AWS Configuration
 
