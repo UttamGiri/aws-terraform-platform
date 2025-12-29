@@ -19,10 +19,11 @@ This project demonstrates secure AWS infrastructure deployment using Terraform w
 1. Go to AWS Control Tower in the AWS Management Console
 2. Enable Control Tower (this is a one-time setup)
 3. By default, Control Tower creates two Organizational Units (OUs):
-   - **NonProd OU** - For non-production workloads
-   - **Prod OU** - For production workloads
+   - **Sandbox OU** - For development and testing workloads
+   - **Security OU** - For security and compliance workloads (e.g., Log Archive, Security Tooling)
 4. **AWS CloudTrail** and **AWS Config** are automatically applied to all accounts
 5. **Always go through Account Factory** to create new accounts (this ensures proper OU assignment and governance)
+6. **Note**: You may create additional custom OUs (e.g., NonProd, Prod) as needed for your organization structure
 
 ### Step 2: Create Terraform State Infrastructure (Manual)
 
